@@ -59,46 +59,60 @@ class PyNumexpr(PythonPackage):
         # Intel oneAPI math.h declares signbitf/isfinited/isnand/isinfd
         # returning int, but numexpr defines the same names returning bool.
         # C++ does not allow overloading on return type alone.
-        # Use filter_file (immune to CRLF line endings) to guard the
-        # conflicting definitions with Intel compiler detection macros.
+        # Use raw bytes I/O to avoid any CRLF/encoding issues.
         if not self.spec.satisfies("%oneapi") and not self.spec.satisfies("%intel"):
             return
-        if not self.spec.satisfies("@:2.14.1"):
-            return
         config = "numexpr/numexpr_config.hpp"
-        # Guard the standalone signbitf definition
-        filter_file(
-            r"(//no single precision version of signbit in C\+\+ standard\r?\n)"
-            r"(inline bool signbitf\(float x\) \{ return signbit\(\(double\)x\); \})",
-            r"\1"
-            r"#if defined(__INTEL_COMPILER) || defined(__INTEL_LLVM_COMPILER)\n"
-            r"inline bool signbitf(float x) { return (bool)signbit((double)x); }\n"
-            r"#else\n"
-            r"\2\n"
-            r"#endif",
-            config,
-            string=False,
+        with open(config, "rb") as f:
+            content = f.read()
+        # Normalize CRLF so replacements use consistent line endings
+        content = content.replace(b"\r\n", b"\n")
+        # Guard signbitf (defined before the _WIN32 block)
+        content = content.replace(
+            b"inline bool signbitf(float x) { return signbit((double)x); }",
+            b"#if !defined(__INTEL_COMPILER) && !defined(__INTEL_LLVM_COMPILER)\n"
+            b"inline bool signbitf(float x) { return signbit((double)x); }\n"
+            b"#endif",
         )
         # Guard the six inline bool wrappers in the non-Windows block
-        filter_file(
-            r"(   non-overloaded wrappers for these functions\) \*/\r?\n)"
-            r"(inline bool isfinitef_\(float x\) \{ return !!std::isfinite\(x\); \}\r?\n"
-            r"inline bool isnanf_\(float x\)    \{ return !!std::isnan\(x\); \}\r?\n"
-            r"inline bool isfinited\(double x\) \{ return !!std::isfinite\(x\); \}\r?\n"
-            r"inline bool isnand\(double x\)    \{ return !!std::isnan\(x\); \}\r?\n"
-            r"inline bool isinff_\(float x\) \{ return !!std::isinf\(x\); \}\r?\n"
-            r"inline bool isinfd\(double x\)    \{ return !!std::isinf\(x\); \})",
-            r"\1"
-            r"#if defined(__INTEL_COMPILER) || defined(__INTEL_LLVM_COMPILER)\n"
-            r"inline bool isfinitef_(float x) { return (bool)std::isfinite(x); }\n"
-            r"inline bool isnanf_(float x)    { return (bool)std::isnan(x); }\n"
-            r"inline bool isfinited(double x) { return (bool)std::isfinite(x); }\n"
-            r"inline bool isnand(double x)    { return (bool)std::isnan(x); }\n"
-            r"inline bool isinff_(float x)    { return (bool)std::isinf(x); }\n"
-            r"inline bool isinfd(double x)    { return (bool)std::isinf(x); }\n"
-            r"#else\n"
-            r"\2\n"
-            r"#endif",
-            config,
-            string=False,
-        )
+        for old, new in [
+            (
+                b"inline bool isfinitef_(float x) { return !!std::isfinite(x); }",
+                b"#if !defined(__INTEL_COMPILER) && !defined(__INTEL_LLVM_COMPILER)\n"
+                b"inline bool isfinitef_(float x) { return !!std::isfinite(x); }\n"
+                b"#endif",
+            ),
+            (
+                b"inline bool isnanf_(float x)    { return !!std::isnan(x); }",
+                b"#if !defined(__INTEL_COMPILER) && !defined(__INTEL_LLVM_COMPILER)\n"
+                b"inline bool isnanf_(float x)    { return !!std::isnan(x); }\n"
+                b"#endif",
+            ),
+            (
+                b"inline bool isfinited(double x) { return !!std::isfinite(x); }",
+                b"#if !defined(__INTEL_COMPILER) && !defined(__INTEL_LLVM_COMPILER)\n"
+                b"inline bool isfinited(double x) { return !!std::isfinite(x); }\n"
+                b"#endif",
+            ),
+            (
+                b"inline bool isnand(double x)    { return !!std::isnan(x); }",
+                b"#if !defined(__INTEL_COMPILER) && !defined(__INTEL_LLVM_COMPILER)\n"
+                b"inline bool isnand(double x)    { return !!std::isnan(x); }\n"
+                b"#endif",
+            ),
+            (
+                b"inline bool isinff_(float x) { return !!std::isinf(x); }",
+                b"#if !defined(__INTEL_COMPILER) && !defined(__INTEL_LLVM_COMPILER)\n"
+                b"inline bool isinff_(float x) { return !!std::isinf(x); }\n"
+                b"#endif",
+            ),
+            (
+                b"inline bool isinfd(double x)    { return !!std::isinf(x); }",
+                b"#if !defined(__INTEL_COMPILER) && !defined(__INTEL_LLVM_COMPILER)\n"
+                b"inline bool isinfd(double x)    { return !!std::isinf(x); }\n"
+                b"#endif",
+            ),
+        ]:
+            content = content.replace(old, new)
+        with open(config, "wb") as f:
+            f.write(content)
