@@ -30,6 +30,19 @@ class PyNumexpr(PythonPackage):
     version("2.5", sha256="4ca111a9a27c9513c2e2f5b70c0a84ea69081d7d8e4512d4c3f26a485292de0d")
     version("2.4.6", sha256="2681faf55a3f19ba4424cc3d6f0a10610ebd49f029f8453f0ba64dd5c0fe4e0f")
 
+    # Intel math.h declares signbitf/isfinited/isnand/isinfd returning int,
+    # but numexpr defines the same names returning bool — C++ rejects this.
+    patch(
+        "intel_math_conflict.patch",
+        sha256="cd21bb4b209daba862bef7d790348c8c283db64aff9687fbf9e400f9c2b29777",
+        when="@2.14.1 %oneapi",
+    )
+    patch(
+        "intel_math_conflict.patch",
+        sha256="cd21bb4b209daba862bef7d790348c8c283db64aff9687fbf9e400f9c2b29777",
+        when="@2.14.1 %intel",
+    )
+
     with default_args(type="build"):
         depends_on("c")
         depends_on("cxx")
