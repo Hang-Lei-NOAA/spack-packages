@@ -15,6 +15,7 @@ class PyNumexpr(PythonPackage):
 
     license("MIT", checked_by="lgarrison")
 
+    version("2.14.2", sha256="e7144e83ea9e581f2273e0304f15836736c4e470e2bd2e378ce617662a1ca278")
     version("2.14.1", sha256="4be00b1086c7b7a5c32e31558122b7b80243fe098579b170967da83f3152b48b")
     version("2.10.2", sha256="7e61a8aa4dacb15787b31c31bd7edf90c026d5e6dbe727844c238726e8464592")
     version("2.9.0", sha256="4df4163fcab20030137e8f2aa23e88e1e42e6fe702387cfd95d7675e1d84645e")
@@ -29,19 +30,6 @@ class PyNumexpr(PythonPackage):
     version("2.6.1", sha256="e92c83d066fa8da63864d69b5f218287cc31437ae844db77390f2183123aab22")
     version("2.5", sha256="4ca111a9a27c9513c2e2f5b70c0a84ea69081d7d8e4512d4c3f26a485292de0d")
     version("2.4.6", sha256="2681faf55a3f19ba4424cc3d6f0a10610ebd49f029f8453f0ba64dd5c0fe4e0f")
-
-    # Intel math.h declares signbitf/isfinited/isnand/isinfd returning int,
-    # but numexpr defines the same names returning bool — C++ rejects this.
-    patch(
-        "intel_math_conflict.patch",
-        sha256="cd21bb4b209daba862bef7d790348c8c283db64aff9687fbf9e400f9c2b29777",
-        when="@2.14.1 %oneapi",
-    )
-    patch(
-        "intel_math_conflict.patch",
-        sha256="cd21bb4b209daba862bef7d790348c8c283db64aff9687fbf9e400f9c2b29777",
-        when="@2.14.1 %intel",
-    )
 
     with default_args(type="build"):
         depends_on("c")
@@ -66,3 +54,51 @@ class PyNumexpr(PythonPackage):
 
         # Historical dependencies
         depends_on("py-packaging", when="@2.8.3")
+
+    def patch(self):
+        # Intel oneAPI math.h declares signbitf/isfinited/isnand/isinfd
+        # returning int, but numexpr defines the same names returning bool.
+        # C++ does not allow overloading on return type alone.
+        # Use filter_file (immune to CRLF line endings) to guard the
+        # conflicting definitions with Intel compiler detection macros.
+        if not self.spec.satisfies("%oneapi") and not self.spec.satisfies("%intel"):
+            return
+        if not self.spec.satisfies("@:2.14.1"):
+            return
+        config = "numexpr/numexpr_config.hpp"
+        # Guard the standalone signbitf definition
+        filter_file(
+            r"(//no single precision version of signbit in C\+\+ standard\r?\n)"
+            r"(inline bool signbitf\(float x\) \{ return signbit\(\(double\)x\); \})",
+            r"\1"
+            r"#if defined(__INTEL_COMPILER) || defined(__INTEL_LLVM_COMPILER)\n"
+            r"inline bool signbitf(float x) { return (bool)signbit((double)x); }\n"
+            r"#else\n"
+            r"\2\n"
+            r"#endif",
+            config,
+            string=False,
+        )
+        # Guard the six inline bool wrappers in the non-Windows block
+        filter_file(
+            r"(   non-overloaded wrappers for these functions\) \*/\r?\n)"
+            r"(inline bool isfinitef_\(float x\) \{ return !!std::isfinite\(x\); \}\r?\n"
+            r"inline bool isnanf_\(float x\)    \{ return !!std::isnan\(x\); \}\r?\n"
+            r"inline bool isfinited\(double x\) \{ return !!std::isfinite\(x\); \}\r?\n"
+            r"inline bool isnand\(double x\)    \{ return !!std::isnan\(x\); \}\r?\n"
+            r"inline bool isinff_\(float x\) \{ return !!std::isinf\(x\); \}\r?\n"
+            r"inline bool isinfd\(double x\)    \{ return !!std::isinf\(x\); \})",
+            r"\1"
+            r"#if defined(__INTEL_COMPILER) || defined(__INTEL_LLVM_COMPILER)\n"
+            r"inline bool isfinitef_(float x) { return (bool)std::isfinite(x); }\n"
+            r"inline bool isnanf_(float x)    { return (bool)std::isnan(x); }\n"
+            r"inline bool isfinited(double x) { return (bool)std::isfinite(x); }\n"
+            r"inline bool isnand(double x)    { return (bool)std::isnan(x); }\n"
+            r"inline bool isinff_(float x)    { return (bool)std::isinf(x); }\n"
+            r"inline bool isinfd(double x)    { return (bool)std::isinf(x); }\n"
+            r"#else\n"
+            r"\2\n"
+            r"#endif",
+            config,
+            string=False,
+        )
