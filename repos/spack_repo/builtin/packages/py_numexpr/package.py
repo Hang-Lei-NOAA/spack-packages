@@ -67,46 +67,33 @@ class PyNumexpr(PythonPackage):
             content = f.read()
         # Normalize CRLF so replacements use consistent line endings
         content = content.replace(b"\r\n", b"\n")
-        # Guard signbitf (defined before the _WIN32 block)
-        content = content.replace(
-            b"inline bool signbitf(float x) { return signbit((double)x); }",
-            b"#if !defined(__INTEL_COMPILER) && !defined(__INTEL_LLVM_COMPILER)\n"
-            b"inline bool signbitf(float x) { return signbit((double)x); }\n"
-            b"#endif",
-        )
-        # Guard the six inline bool wrappers in the non-Windows block
+        # Only guard the 4 functions that Intel math.h already declares as int.
+        # isnanf_, isfinitef_, isinff_ (underscore suffixed) are numexpr-own
+        # names not present in Intel math.h — leave them untouched.
         for old, new in [
             (
-                b"inline bool isfinitef_(float x) { return !!std::isfinite(x); }",
+                # declared as int signbitf(float) in Intel math.h
+                b"inline bool signbitf(float x) { return signbit((double)x); }",
                 b"#if !defined(__INTEL_COMPILER) && !defined(__INTEL_LLVM_COMPILER)\n"
-                b"inline bool isfinitef_(float x) { return !!std::isfinite(x); }\n"
+                b"inline bool signbitf(float x) { return signbit((double)x); }\n"
                 b"#endif",
             ),
             (
-                b"inline bool isnanf_(float x)    { return !!std::isnan(x); }",
-                b"#if !defined(__INTEL_COMPILER) && !defined(__INTEL_LLVM_COMPILER)\n"
-                b"inline bool isnanf_(float x)    { return !!std::isnan(x); }\n"
-                b"#endif",
-            ),
-            (
+                # declared as int isfinited(double) in Intel math.h
                 b"inline bool isfinited(double x) { return !!std::isfinite(x); }",
                 b"#if !defined(__INTEL_COMPILER) && !defined(__INTEL_LLVM_COMPILER)\n"
                 b"inline bool isfinited(double x) { return !!std::isfinite(x); }\n"
                 b"#endif",
             ),
             (
+                # declared as int isnand(double) in Intel math.h
                 b"inline bool isnand(double x)    { return !!std::isnan(x); }",
                 b"#if !defined(__INTEL_COMPILER) && !defined(__INTEL_LLVM_COMPILER)\n"
                 b"inline bool isnand(double x)    { return !!std::isnan(x); }\n"
                 b"#endif",
             ),
             (
-                b"inline bool isinff_(float x) { return !!std::isinf(x); }",
-                b"#if !defined(__INTEL_COMPILER) && !defined(__INTEL_LLVM_COMPILER)\n"
-                b"inline bool isinff_(float x) { return !!std::isinf(x); }\n"
-                b"#endif",
-            ),
-            (
+                # declared as int isinfd(double) in Intel math.h
                 b"inline bool isinfd(double x)    { return !!std::isinf(x); }",
                 b"#if !defined(__INTEL_COMPILER) && !defined(__INTEL_LLVM_COMPILER)\n"
                 b"inline bool isinfd(double x)    { return !!std::isinf(x); }\n"
