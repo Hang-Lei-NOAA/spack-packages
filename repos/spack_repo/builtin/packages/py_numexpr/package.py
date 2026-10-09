@@ -55,7 +55,15 @@ class PyNumexpr(PythonPackage):
         # Historical dependencies
         depends_on("py-packaging", when="@2.8.3")
 
+    @when("%oneapi")
     def patch(self):
+        self._patch_intel()
+
+    @when("%intel")
+    def patch(self):
+        self._patch_intel()
+
+    def _patch_intel(self):
         # Intel oneAPI math.h clashes with numexpr in two ways:
         #
         # 1. numexpr_config.hpp redefines signbitf/isfinited/isnand/isinfd as
@@ -71,8 +79,8 @@ class PyNumexpr(PythonPackage):
         # functions.hpp to use the ne_* names in the function-pointer tables.
         #
         # Use raw bytes I/O to handle CRLF line endings in the tarball.
-        if not self.spec.satisfies("%oneapi") and not self.spec.satisfies("%intel"):
-            return
+        # All bytes.replace() calls are no-ops on versions that lack the target
+        # string, so this is safe across the full version range.
 
         # --- patch numexpr/numexpr_config.hpp ---
         config = "numexpr/numexpr_config.hpp"
